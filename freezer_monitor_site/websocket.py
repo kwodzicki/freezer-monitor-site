@@ -53,6 +53,7 @@ class WebSocket( Thread ):
 
     if self._timer: self.saveData()
     self._timer = Timer( self._interval, self._autoSave )
+    self._timer.start()
 
   def saveData( self ):
 
