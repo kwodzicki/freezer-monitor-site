@@ -29,6 +29,7 @@ print('Setting up layout')
 app.layout = html.Div( children = [
   html.H1('Freezer Monitor'),
   html.H3(children='Real-time stats of chest freezer'),
+  html.Div(id='current-time'),
   html.Div(id='current-temp'),
   html.Div(id='current-rh'),
   dcc.Graph(id = 'live-graph', animate = True),
@@ -40,6 +41,7 @@ app.layout = html.Div( children = [
 )
   
 @app.callback(
+            Output('current-time', 'children'),
             Output('current-temp', 'children'),
             Output('current-rh',   'children'),
             Output('live-graph',   'figure'),
@@ -90,7 +92,8 @@ def update_graph_scatter( *args ):
   )
 
 
-  return (f"Current temperature : {df[y1].iloc[-1]} C", 
+  return (f"Current time        : {df[ x].iloc[-1]}", 
+          f"Current temperature : {df[y1].iloc[-1]} C", 
           f"Current humidity    : {df[y2].iloc[-1]} %", 
           fig)
 
