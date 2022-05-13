@@ -1,19 +1,31 @@
+import os
+
 import dash
 from dash.dependencies import Output, Input
 from dash import dcc, html
+
+from flask import Flask
+
 import plotly
-#import plotly.express as px
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
-from .websocket import WebSocket
+import pandas
 
-RED    = '#FF0000'
-BLUE   = '#483D8B'
+import fasteners
 
-socket = WebSocket() 
-app    = dash.Dash(__name__)
+from . import CSV, CSVLOCK
 
+RED     = '#FF0000'
+BLUE    = '#483D8B'
+
+RW_LOCK = fasteners.InterProcessReaderWriterLock( CSVLOCK )
+
+print( 'Initializing Dash object' )
+server = Flask( __name__ )
+app    = dash.Dash( name = __name__, server = server )
+
+print('Setting up layout')
 app.layout = html.Div( children = [
   html.H1('Freezer Monitor'),
   html.H3(children='Real-time stats of chest freezer'),
@@ -34,8 +46,10 @@ app.layout = html.Div( children = [
             Input( 'graph-update', 'n_intervals') 
 )
 def update_graph_scatter( *args ):
+  with RW_LOCK.read_lock():
+    if not os.path.isfile( CSV ): return '', '', None
+    df = pandas.read_csv( CSV )
 
-  df   = socket.df
   x    = 'timestamp'
   y1   = 'temp'
   y2   = 'rh'
@@ -79,9 +93,8 @@ def update_graph_scatter( *args ):
   return (f"Current temperature : {df[y1].iloc[-1]} C", 
           f"Current humidity    : {df[y2].iloc[-1]} %", 
           fig)
-          
+
+
 if __name__ == '__main__':
   app.run_server()
-  socket.stop()
-  socket.join()
   print( 'finished' )

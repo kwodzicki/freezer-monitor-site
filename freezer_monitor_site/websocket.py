@@ -7,13 +7,16 @@ import json
 from threading import Thread, Timer, Lock, Event
 
 import pandas
+import fasteners
 
-DIR = os.path.dirname( os.path.abspath( os.path.realpath(__file__) ) )
-CSV = os.path.join( DIR, 'data.csv' )
+from . import CSV, CSVLOCK
+
+HOSTNAME = socket.gethostname()
+LOCAL_IP = socket.gethostbyname(HOSTNAME)
 
 class WebSocket( Thread ):
 
-  def __init__(self, host='', port = 20486, **kwargs):
+  def __init__(self, host=LOCAL_IP, port = 20486, **kwargs):
 
     super().__init__()
     self.host       = host
@@ -21,14 +24,18 @@ class WebSocket( Thread ):
 
     self._log       = logging.getLogger(__name__)
     self._socket    = None
+    self._timer     = None
     self._connected = False
+    self._running   = Event()
     self._lock      = Lock()
     self._length    = 4
-    self._running   = Event()
-    self._timer     = None
+    self._interval  = 60.0              # Save interval for updating file
+
+    self._rw_lock   = fasteners.InterProcessReaderWriterLock( CSVLOCK )
 
     if os.path.isfile( CSV ):
-      self._df = pandas.read_csv( CSV )
+      with self._rw_lock.read_lock():  
+        self._df = pandas.read_csv( CSV )
     else:
       self._df = pandas.DataFrame(columns=['timestamp', 'temp', 'rh'])
 
@@ -45,12 +52,7 @@ class WebSocket( Thread ):
     """Run autosaving"""
 
     if self._timer: self.saveData()
-
-    today    = datetime.now()
-    tomorrow = today.replace(hour=0,minute=0,second=0,microsecond=0) + timedelta(days=1)
-    dt       = (tomorrow - today).total_seconds() + 1.0
-
-    self._timer = Timer( dt, self._autoSave )
+    self._timer = Timer( self._interval, self._autoSave )
 
   def saveData( self ):
 
@@ -58,9 +60,10 @@ class WebSocket( Thread ):
       dates = pandas.to_datetime( self._df['timestamp'] )       # Convert to datetime
       index = dates >= (datetime.now() - timedelta(days=30))    # Get all data within last 30 days
       self._df = self._df[index]                                # Subset dataframe
-      self._df.to_csv( CSV, index=False )                       # Write dataframe to csv
+      with self._rw_lock.write_lock():
+        self._df.to_csv( CSV, index=False )                     # Write dataframe to csv
 
-  def stop(self):
+  def stop(self, *args, **kwargs):
 
     self._running.clear()
 
@@ -100,7 +103,13 @@ class WebSocket( Thread ):
 
     self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)	# Set socket
     self.socket.settimeout( 1.0 )
-    self.socket.bind( (self.host, self.port) )
+    try:
+      print( f'Attempting to bind - {self.host}:{self.port}' )
+      self.socket.bind( (self.host, self.port) )
+    except Exception as err:
+      print( f'Failed to bind : {err}' )
+      return
+
     self.socket.listen()
 
     while self._running.is_set():
@@ -118,3 +127,9 @@ class WebSocket( Thread ):
     self.saveData()
     self._log.debug( 'Thread dead' )
 
+if __name__ == "__main__":
+  import signal 
+  inst = WebSocket()
+  signal.signal( signal.SIGINT,  inst.stop )
+  signal.signal( signal.SIGTERM, inst.stop )
+  inst.join()

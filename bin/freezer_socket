@@ -1,0 +1,17 @@
+#!/bin/bash
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+source $SCRIPT_DIR/activate
+
+$SCRIPT_DIR/python - << EOF
+
+import signal 
+ 
+from freezer_monitor_site.websocket import WebSocket
+
+inst = WebSocket()
+signal.signal( signal.SIGINT,  inst.stop )
+signal.signal( signal.SIGTERM, inst.stop )
+inst.join()
+
+EOF
