@@ -32,7 +32,7 @@ app.layout = html.Div( children = [
   html.Div(id='current-time'),
   html.Div(id='current-temp'),
   html.Div(id='current-rh'),
-  dcc.Graph(id = 'live-graph', animate = True),
+  dcc.Graph(id = 'live-graph', animate = True, style={'height' : '85vh'}),
   dcc.Interval(
               id          = 'graph-update',
               interval    = 60 * 1000,
@@ -48,53 +48,51 @@ app.layout = html.Div( children = [
             Input( 'graph-update', 'n_intervals') 
 )
 def update_graph_scatter( *args ):
-  with RW_LOCK.read_lock():
-    if not os.path.isfile( CSV ): return '', '', None
-    df = pandas.read_csv( CSV )
+  x, y1, y2 = 'timestamp', 'temp', 'rh'                                                 # Specify keys for x and y axes
 
-  x    = 'timestamp'
-  y1   = 'temp'
-  y2   = 'rh'
-  #fig  = px.line( df, x = x, y = y1 )
-  #fig.update_layout( xaxis_title = 'Date', 
-  #                   yaxis_title = 'Temperature (degrees C)',
-  #                   xaxis_range = [df[x ].min(), df[x ].max()],
-  #                   yaxis_range = [df[y1].min(), df[y1].max()]) 
+  with RW_LOCK.read_lock():                                                             # Grab lock for file
+    if not os.path.isfile( CSV ):                                                       # If the CSV file does NOT exist, then return empty strings and DataFrame 
+      return '', '', '', pandas.DataFrame( columns = [x, y1, y2] )
+    df = pandas.read_csv( CSV )                                                         # Read in CSV file
 
+  fig  = make_subplots( specs=[[{"secondary_y" : True}]] )                              # Initialize sub plots
 
-  fig  = make_subplots( specs=[[{"secondary_y" : True}]] )
-
+  # First plot for temperature
   fig.add_trace( 
           go.Scatter( x = df[x], y = df[y1], name = 'Temperature', line={'color' : RED}), 
           secondary_y=False 
   )
 
+  # Second plot for RH
   fig.add_trace( 
           go.Scatter( x = df[x], y = df[y2], name = 'Relative Humidity', line={'color' : BLUE}),
           secondary_y=True
   )
-  
+
+  # Update x-axis for plots
   fig.update_xaxes(
           title_text = 'Date', 
           range      = [df[x ].min(), df[x ].max()],
   )
+  # Update y-axis for first plot (temperature)
   fig.update_yaxes(
           title_text  = '<b>Temperature (degree C)</b>',
           color       = RED,
-          range       = [df[y1].min(), df[y1].max()],
+          range       = [-45, 15],
           secondary_y = False
   )
+  # Update second y-axis (RH)
   fig.update_yaxes(
           title_text  = '<b>Relative Humidity (%)</b>',
           color       = BLUE,
-          range       = [df[y2].min(), df[y2].max()],
+          range       = [0, 100],
           secondary_y = True
   )
 
 
   return (f"Current time        : {df[ x].iloc[-1]}", 
-          f"Current temperature : {df[y1].iloc[-1]} C", 
-          f"Current humidity    : {df[y2].iloc[-1]} %", 
+          f"Current temperature : {df[y1].iloc[-1]:0.1f} C", 
+          f"Current humidity    : {df[y2].iloc[-1]:0.1f} %", 
           fig)
 
 
