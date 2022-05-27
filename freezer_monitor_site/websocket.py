@@ -68,25 +68,41 @@ class WebSocket( Thread ):
 
     self._running.clear()
 
-  def _recv(self, conn, addr):
+  def _recvmsg(self, conn, length):
+    """Receive entire message"""
+
+    packets = []                                                # List to store all packets from remote
+    while self._running.is_set() and (length > 0):              # While running and have NOT gotten full message (all packets)
+      try:                                                      # Try to 
+        packet = conn.recv( length )                            # Read in all the data from the socket
+      except socket.timeout:                                    # On timeout
+        self._log.debug('Failed to get data before timeout')    # log
+        continue                                                # Continue to try to receive from socket again
+      except Exception as err:                                  # On error
+        self._log.warning(f'Failed to get data : {err}')        # log
+        continue                                                # Continue to try to receive from socket again
+
+      if packet == b'': break                                   # If packet is empty, then break loop as socket is closed
+
+      packets.append( packet )                                  # Append packet to list of packets
+      length -= len( packet )                                   # Decrement length of message by the size of the packet received
+
+    return b''.join( packets )                                  # Join packets together and return
+
+  def recv(self, conn, addr):
 
     conn.settimeout( 1.0 )
     with conn:
       self._log.debug(f"Connected by {addr}")
       while self._running.is_set():
-        try:
-          dataLen = conn.recv( self._length )
-        except socket.timeout:
-          self._log.debug('Failed to get data before timeout')
-          continue 
-        except Exception as err:
-          self._log.warning(f'Failed to get data : {err}')
-          continue
+        msgLen = self._recvmsg( conn, self._length )
+        if msgLen == b'': break                                 # If no data returned, break
 
-        if dataLen == b'': break
+        msgLen = int.from_bytes(msgLen, 'little')               # Convert msgLen to integer
+        data   = self._recvmsg( conn, msgLen )                  # Try to get rest of data
+        if data == b'': break                                   # if no data returned, break
 
-        data = conn.recv( int.from_bytes(dataLen, 'little') )
-        data = json.loads( data.decode() )
+        data   = json.loads( data.decode() )                    # Decode data from json format
         for key, val in data.items():
           if not isinstance( val, (list, tuple) ):
             data[key] = [ val ]
@@ -121,7 +137,7 @@ class WebSocket( Thread ):
       except Exception as err:
         self._log.warning( f'Encountered error waiting for connection : {err}' )
       else:
-        self._recv(conn, addr)
+        self.recv(conn, addr)
 
 
     if self._timer: self._timer.cancel()
